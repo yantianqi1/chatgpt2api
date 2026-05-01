@@ -130,6 +130,7 @@ type AccountUpdateResponse = {
 export type SettingsConfig = {
   proxy: string;
   base_url?: string;
+  image_response_format?: "url" | "b64_json" | string;
   registration_enabled?: boolean;
   refresh_account_interval_minute?: number | string;
   image_concurrent_limit?: number | string;

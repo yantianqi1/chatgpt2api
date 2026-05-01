@@ -4,9 +4,31 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type protocolTestImageConfig struct {
+	baseURL string
+	root    string
+}
+
+func (c protocolTestImageConfig) ImagesDir() string {
+	return filepath.Join(c.root, "images")
+}
+
+func (c protocolTestImageConfig) ImageMetadataDir() string {
+	return filepath.Join(c.root, "image_metadata")
+}
+
+func (c protocolTestImageConfig) BaseURL() string {
+	return c.baseURL
+}
+
+func (c protocolTestImageConfig) CleanupOldImages() int {
+	return 0
+}
 
 func TestChatAndResponsesImageParsing(t *testing.T) {
 	imageData := base64.StdEncoding.EncodeToString([]byte("png-bytes"))
@@ -62,6 +84,29 @@ func TestImageRequestDefaultsToAutoModel(t *testing.T) {
 	}
 	if model != "auto" || prompt != "画一张图" || n != 1 {
 		t.Fatalf("ChatImageArgs() = model %q prompt %q n %d", model, prompt, n)
+	}
+}
+
+func TestFormatImageResultReturnsOnlyRequestedImageField(t *testing.T) {
+	imageData := base64.StdEncoding.EncodeToString([]byte("image-bytes"))
+	engine := &Engine{Config: protocolTestImageConfig{baseURL: "https://assets.test", root: t.TempDir()}}
+
+	b64Result := engine.FormatImageResult([]map[string]any{{"b64_json": imageData}}, "draw", "b64_json", "", "owner", 123, "")
+	b64Data := b64Result["data"].([]map[string]any)
+	if b64Data[0]["b64_json"] != imageData {
+		t.Fatalf("b64_json result = %#v", b64Data[0])
+	}
+	if _, ok := b64Data[0]["url"]; ok {
+		t.Fatalf("b64_json response leaked url: %#v", b64Data[0])
+	}
+
+	urlResult := engine.FormatImageResult([]map[string]any{{"b64_json": imageData}}, "draw", "url", "", "owner", 123, "")
+	urlData := urlResult["data"].([]map[string]any)
+	if got := urlData[0]["url"]; got == "" {
+		t.Fatalf("url result = %#v", urlData[0])
+	}
+	if _, ok := urlData[0]["b64_json"]; ok {
+		t.Fatalf("url response leaked b64_json: %#v", urlData[0])
 	}
 }
 

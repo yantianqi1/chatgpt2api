@@ -15,6 +15,13 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { testProxy, type ProxyTestResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -126,6 +133,9 @@ export function ConfigCard() {
   );
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
+  const setImageResponseFormat = useSettingsStore(
+    (state) => state.setImageResponseFormat,
+  );
   const setRegistrationEnabled = useSettingsStore(
     (state) => state.setRegistrationEnabled,
   );
@@ -222,6 +232,27 @@ export function ConfigCard() {
                 placeholder="https://example.com"
                 className={settingsInputClassName}
               />
+            </Field>
+            <Field className={configFieldClassName}>
+              <ConfigFieldLabel htmlFor="settings-image-response-format">
+                图片返回格式
+              </ConfigFieldLabel>
+              <Select
+                value={String(config?.image_response_format || "url")}
+                onValueChange={(value) =>
+                  setImageResponseFormat(
+                    value === "b64_json" ? "b64_json" : "url",
+                  )
+                }
+              >
+                <SelectTrigger id="settings-image-response-format">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="url">仅 URL</SelectItem>
+                  <SelectItem value="b64_json">仅 b64_json</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-image-concurrent-limit">

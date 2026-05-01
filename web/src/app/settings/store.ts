@@ -59,6 +59,7 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     log_levels: Array.isArray(config.log_levels) ? config.log_levels : [],
     proxy: typeof config.proxy === "string" ? config.proxy : "",
     base_url: typeof config.base_url === "string" ? config.base_url : "",
+    image_response_format: config.image_response_format === "b64_json" ? "b64_json" : "url",
     registration_enabled: Boolean(config.registration_enabled),
     linuxdo_enabled: Boolean(config.linuxdo_enabled),
     linuxdo_client_id: typeof config.linuxdo_client_id === "string" ? config.linuxdo_client_id : "",
@@ -144,6 +145,7 @@ type SettingsStore = {
   setLogLevel: (level: string, enabled: boolean) => void;
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
+  setImageResponseFormat: (value: "url" | "b64_json") => void;
   setRegistrationEnabled: (value: boolean) => void;
   setLinuxDoEnabled: (value: boolean) => void;
   setLinuxDoClientId: (value: string) => void;
@@ -273,6 +275,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
         proxy: config.proxy.trim(),
         base_url: String(config.base_url || "").trim(),
+        image_response_format: config.image_response_format === "b64_json" ? "b64_json" : "url",
         registration_enabled: Boolean(config.registration_enabled),
         linuxdo_enabled: Boolean(config.linuxdo_enabled),
         linuxdo_client_id: String(config.linuxdo_client_id || "").trim(),
@@ -381,6 +384,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         },
       };
     });
+  },
+
+  setImageResponseFormat: (value) => {
+    set((state) => state.config ? { config: { ...state.config, image_response_format: value } } : {});
   },
 
   setRegistrationEnabled: (value) => {

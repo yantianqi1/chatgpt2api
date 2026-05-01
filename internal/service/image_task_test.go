@@ -180,6 +180,7 @@ func TestImageTaskServicePassesMessagesToHandler(t *testing.T) {
 	if got := payload["quality"]; got != "high" {
 		t.Fatalf("payload quality = %#v, want high", got)
 	}
+	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusSuccess)
 }
 
 func TestImageTaskServiceSubmitsChatTasks(t *testing.T) {

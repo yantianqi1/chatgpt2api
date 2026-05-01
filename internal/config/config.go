@@ -25,6 +25,7 @@ var settingEnvKeys = map[string]string{
 	"user_default_concurrent_limit":     "CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT",
 	"user_default_rpm_limit":            "CHATGPT2API_USER_DEFAULT_RPM_LIMIT",
 	"image_retention_days":              "CHATGPT2API_IMAGE_RETENTION_DAYS",
+	"image_response_format":             "CHATGPT2API_IMAGE_RESPONSE_FORMAT",
 	"auto_remove_invalid_accounts":      "CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS",
 	"auto_remove_rate_limited_accounts": "CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS",
 	"log_retention_days":                "CHATGPT2API_LOG_RETENTION_DAYS",
@@ -231,6 +232,14 @@ func (s *Store) BaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("base_url", ""))), "/")
 }
 
+func (s *Store) ImageResponseFormat() string {
+	format, err := normalizeImageResponseFormat(s.settingValue("image_response_format", "url"))
+	if err != nil {
+		return "url"
+	}
+	return format
+}
+
 func (s *Store) Proxy() string {
 	return strings.TrimSpace(fmt.Sprint(s.settingValue("proxy", "")))
 }
@@ -381,6 +390,7 @@ func (s *Store) Get() map[string]any {
 	data["log_levels"] = s.LogLevels()
 	data["proxy"] = s.Proxy()
 	data["base_url"] = s.BaseURL()
+	data["image_response_format"] = s.ImageResponseFormat()
 	data["registration_enabled"] = s.RegistrationEnabled()
 	linuxdo := s.LinuxDoOAuth()
 	data["linuxdo_enabled"] = linuxdo.Enabled
@@ -420,6 +430,14 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	}
 	if value, ok := next["login_page_image_mode"]; ok {
 		next["login_page_image_mode"] = normalizeLoginPageImageMode(value)
+	}
+	if value, ok := next["image_response_format"]; ok {
+		normalized, err := normalizeImageResponseFormat(value)
+		if err != nil {
+			s.mu.Unlock()
+			return nil, err
+		}
+		next["image_response_format"] = normalized
 	}
 	next["update_repo"] = normalizeUpdateRepo(util.ValueOr(next["update_repo"], "ZyphrZero/chatgpt2api"))
 	if err := s.validateSettingsUpdateLocked(next); err != nil {
@@ -676,6 +694,16 @@ func normalizeLoginPageImageMode(value any) string {
 		return mode
 	default:
 		return "contain"
+	}
+}
+
+func normalizeImageResponseFormat(value any) (string, error) {
+	format := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+	switch format {
+	case "url", "b64_json":
+		return format, nil
+	default:
+		return "", errors.New("image_response_format must be url or b64_json")
 	}
 }
 

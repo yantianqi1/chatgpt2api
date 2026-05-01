@@ -17,6 +17,7 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	unsetEnv(t, "CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT")
 	unsetEnv(t, "CHATGPT2API_USER_DEFAULT_RPM_LIMIT")
 	unsetEnv(t, "CHATGPT2API_IMAGE_RETENTION_DAYS")
+	unsetEnv(t, "CHATGPT2API_IMAGE_RESPONSE_FORMAT")
 	unsetEnv(t, "CHATGPT2API_LOG_RETENTION_DAYS")
 	unsetEnv(t, "CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS")
 	unsetEnv(t, "CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS")
@@ -38,6 +39,7 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 		"user_default_concurrent_limit":   2,
 		"user_default_rpm_limit":          30,
 		"image_retention_days":            14,
+		"image_response_format":           "b64_json",
 		"log_retention_days":              21,
 		"registration_enabled":            true,
 		"log_levels":                      []any{"debug", "error"},
@@ -50,6 +52,9 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	}
 	if store.UpdateRepo() != "owner/project" {
 		t.Fatalf("UpdateRepo() = %q", store.UpdateRepo())
+	}
+	if store.ImageResponseFormat() != "b64_json" {
+		t.Fatalf("ImageResponseFormat() = %q", store.ImageResponseFormat())
 	}
 	assertConfigValue(t, got, "registration_enabled", true)
 
@@ -67,6 +72,7 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 		"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT=2",
 		"CHATGPT2API_USER_DEFAULT_RPM_LIMIT=30",
 		"CHATGPT2API_IMAGE_RETENTION_DAYS=14",
+		"CHATGPT2API_IMAGE_RESPONSE_FORMAT=b64_json",
 		"CHATGPT2API_LOG_RETENTION_DAYS=21",
 		"CHATGPT2API_REGISTRATION_ENABLED=true",
 		"CHATGPT2API_LOG_LEVELS=debug,error",
@@ -74,6 +80,37 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 		if !strings.Contains(envText, want) {
 			t.Fatalf(".env missing %q in:\n%s", want, envText)
 		}
+	}
+}
+
+func TestStoreImageResponseFormatDefaultsAndRejectsInvalidValue(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHATGPT2API_ROOT", root)
+	unsetEnv(t, "CHATGPT2API_IMAGE_RESPONSE_FORMAT")
+	unsetLinuxDoEnv(t)
+
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if got := store.ImageResponseFormat(); got != "url" {
+		t.Fatalf("ImageResponseFormat() = %q, want url", got)
+	}
+	got, err := store.Update(map[string]any{"image_response_format": "b64_json"})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	assertConfigValue(t, got, "image_response_format", "b64_json")
+	if store.ImageResponseFormat() != "b64_json" {
+		t.Fatalf("ImageResponseFormat() after update = %q", store.ImageResponseFormat())
+	}
+
+	_, err = store.Update(map[string]any{"image_response_format": "both"})
+	if err == nil || !strings.Contains(err.Error(), "image_response_format") {
+		t.Fatalf("Update() error = %v, want image_response_format validation", err)
+	}
+	if store.ImageResponseFormat() != "b64_json" {
+		t.Fatalf("invalid update changed format to %q", store.ImageResponseFormat())
 	}
 }
 
@@ -333,7 +370,15 @@ func TestNewStoreDiscoversEnvFromParentDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	if store.RootDir != root {
+	wantRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(root): %v", err)
+	}
+	gotRoot, err := filepath.EvalSymlinks(store.RootDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(RootDir): %v", err)
+	}
+	if gotRoot != wantRoot {
 		t.Fatalf("RootDir = %q, want %q", store.RootDir, root)
 	}
 	if store.BaseURL() != "https://parent.example" {

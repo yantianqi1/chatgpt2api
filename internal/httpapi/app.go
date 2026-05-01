@@ -92,14 +92,14 @@ func NewApp() (*App, error) {
 	app.tasks = service.NewStoredImageTaskService(filepath.Join(cfg.DataDir, "image_tasks.json"), storageBackend,
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-generations", "文生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
-				result, _, err := engine.HandleImageGenerations(ctx, payload)
+				result, _, err := engine.HandleImageGenerations(ctx, app.imagePayloadWithConfiguredResponseFormat(payload))
 				return result, err
 			})
 		},
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-edits", "图生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
 				images, _ := payload["images"].([]protocol.UploadedImage)
-				result, _, err := engine.HandleImageEdits(ctx, payload, images)
+				result, _, err := engine.HandleImageEdits(ctx, app.imagePayloadWithConfiguredResponseFormat(payload), images)
 				return result, err
 			})
 		},
@@ -161,6 +161,7 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 	}
 	body["owner_id"] = identityScope(identity)
 	body["base_url"] = a.resolveImageBaseURL(r)
+	body["response_format"] = a.config.ImageResponseFormat()
 	visibility, err := service.NormalizeImageVisibility(util.Clean(body["visibility"]))
 	if err != nil {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
@@ -191,6 +192,7 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 	}
 	body["owner_id"] = identityScope(identity)
 	body["base_url"] = a.resolveImageBaseURL(r)
+	body["response_format"] = a.config.ImageResponseFormat()
 	visibility, err := service.NormalizeImageVisibility(util.Clean(body["visibility"]))
 	if err != nil {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
@@ -199,6 +201,12 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 	model := firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto)
 	result, stream, err := a.engine.HandleImageEdits(r.Context(), body, images)
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility)
+}
+
+func (a *App) imagePayloadWithConfiguredResponseFormat(payload map[string]any) map[string]any {
+	next := util.CopyMap(payload)
+	next["response_format"] = a.config.ImageResponseFormat()
+	return next
 }
 
 func (a *App) handleChatCompletions(w http.ResponseWriter, r *http.Request) {

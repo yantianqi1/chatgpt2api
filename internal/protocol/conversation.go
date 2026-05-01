@@ -522,7 +522,7 @@ func (e *Engine) FormatImageResult(items []map[string]any, prompt, responseForma
 		}
 		urlValue := e.SaveImageBytesForOwner(imageBytes, baseURL, ownerID)
 		if responseFormat == "b64_json" {
-			data = append(data, map[string]any{"b64_json": b64, "url": urlValue, "revised_prompt": revised})
+			data = append(data, map[string]any{"b64_json": b64, "revised_prompt": revised})
 		} else {
 			data = append(data, map[string]any{"url": urlValue, "revised_prompt": revised})
 		}
