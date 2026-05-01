@@ -73,12 +73,18 @@
 ### 1. 获取部署文件
 
 ```bash
-git clone https://github.com/ZyphrZero/chatgpt2api.git
+git clone https://github.com/yantianqi1/chatgpt2api.git
 cd chatgpt2api
-cp .env.example .env
 ```
 
-编辑 `.env`。建议至少设置管理员密码：
+`.env` 是可选的 Compose 变量文件，用于启动时注入管理员密码、镜像名、存储后端等变量。需要固定初始管理员密码时再创建：
+
+```bash
+cp .env.example .env
+# 编辑 .env
+```
+
+建议至少设置管理员密码：
 
 ```env
 CHATGPT2API_ADMIN_USERNAME=admin
@@ -95,10 +101,11 @@ docker compose up -d
 
 默认 Compose 配置：
 
-- 镜像：`ghcr.io/zyphrzero/chatgpt2api:latest`
+- 镜像：`ghcr.io/yantianqi1/chatgpt2api:latest`
 - 端口：宿主机 `3000` -> 容器 `80`
 - 数据目录：`./data:/app/data`
-- 环境文件：`./.env:/app/.env`
+- 运行配置：容器内 `/app/.env` 指向 `./data/.env`，设置页保存后立即持久化
+- Compose 变量文件：根目录 `.env` 可选，只用于 Docker Compose 启动变量；运行时设置由应用写入 `./data/.env`
 - 重启策略：`restart: unless-stopped`
 
 访问：
@@ -113,14 +120,6 @@ http://localhost:3000
 docker compose logs -f app
 ```
 
-### 3. 自建镜像
-
-如果需要从当前源码构建本地镜像：
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
-```
-
 ## 升级与在线更新
 
 ### Docker 镜像升级
@@ -128,14 +127,9 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 Docker 部署的推荐升级方式：
 
 ```bash
+git pull
 docker compose pull
 docker compose up -d
-```
-
-如果 GHCR 拉取提示 denied，请确认 GitHub Packages 中镜像已设为 Public，或先登录：
-
-```bash
-docker login ghcr.io
 ```
 
 ### 管理端在线更新
@@ -157,7 +151,7 @@ Release 构建可以在设置页的“版本更新”卡片中检查和执行在
 
 - 在线更新只在 `BuildType=release` 的构建中开放。
 - Docker 场景下，在线更新替换的是当前容器文件系统中的运行时文件，不会更新 Docker 镜像本身。
-- 如果重新创建容器，最终仍以镜像内容为准。长期稳定的 Docker 升级仍建议使用 `docker compose pull && docker compose up -d`。
+- 如果重新创建容器，最终仍以镜像内容为准。长期稳定的 Docker 升级仍建议使用 `git pull && docker compose pull && docker compose up -d`。
 - 在线更新访问 GitHub 可通过 `CHATGPT2API_UPDATE_PROXY_URL` 配置代理；未设置时复用 `CHATGPT2API_PROXY`。
 - 如果检查更新提示 `GitHub API returned 403`，通常是当前出口 IP 的匿名 GitHub API 额度耗尽。可在设置页“版本更新”卡片中配置 GitHub API Token，或通过 `CHATGPT2API_UPDATE_GITHUB_TOKEN` 使用认证请求。
 - 如果检查更新提示 `GitHub API returned 404`，通常是更新源仓库没有 GitHub Release，或 Token 没有该仓库读取权限。请先发布包含 archive 和 `checksums.txt` 的 Release，或在设置页配置实际发布 Release 的 `owner/repo`。
@@ -305,6 +299,15 @@ bun run build
 - `bun install --frozen-lockfile`
 - `bun run build`
 
+### Docker 镜像
+
+`.github/workflows/docker-image.yml` 在 `main` push、`v*` 标签 push 和手动触发时构建多架构镜像并推送 GHCR：
+
+- `ghcr.io/yantianqi1/chatgpt2api:latest`（`main`）
+- `ghcr.io/yantianqi1/chatgpt2api:main`
+- `ghcr.io/yantianqi1/chatgpt2api:sha-<commit>`
+- `ghcr.io/yantianqi1/chatgpt2api:<tag>`（标签触发）
+
 ### Release
 
 推送 `v*` 标签会触发 `.github/workflows/release.yml`：
@@ -336,9 +339,9 @@ Release 构建会注入：
 默认发布到：
 
 ```text
-ghcr.io/zyphrzero/chatgpt2api:<version>
-ghcr.io/zyphrzero/chatgpt2api:latest
-ghcr.io/zyphrzero/chatgpt2api:<major>.<minor>
+ghcr.io/<github-owner>/chatgpt2api:<version>
+ghcr.io/<github-owner>/chatgpt2api:latest
+ghcr.io/<github-owner>/chatgpt2api:<major>.<minor>
 ```
 
 配置 DockerHub secrets 后也会发布：

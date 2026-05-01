@@ -53,6 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=go-build /out/chatgpt2api ./chatgpt2api
 COPY --from=web-build /app/web/dist ./web_dist
+RUN mkdir -p /app/data && ln -sf /app/data/.env /app/.env
 
 EXPOSE 80
 

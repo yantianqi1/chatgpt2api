@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY chatgpt2api /app/chatgpt2api
 COPY web_dist /app/web_dist
 
-RUN mkdir -p /app/data && chmod +x /app/chatgpt2api
+RUN mkdir -p /app/data && ln -sf /app/data/.env /app/.env && chmod +x /app/chatgpt2api
 
 EXPOSE 80
 
