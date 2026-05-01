@@ -110,6 +110,51 @@ func TestFormatImageResultReturnsOnlyRequestedImageField(t *testing.T) {
 	}
 }
 
+func TestImageChatConversationRequestUsesRequestedImageFormat(t *testing.T) {
+	body := map[string]any{
+		"model":           "gpt-image-2",
+		"response_format": "url",
+		"base_url":        "https://assets.test",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "画一张图"},
+		},
+	}
+
+	model, prompt, n, images, messages, err := ChatImageArgs(body)
+	if err != nil {
+		t.Fatalf("ChatImageArgs() error = %v", err)
+	}
+	request := imageChatConversationRequest(body, imageChatConversationOptions{
+		model:    model,
+		prompt:   prompt,
+		n:        n,
+		images:   images,
+		messages: messages,
+	})
+
+	if request.ResponseFormat != "url" {
+		t.Fatalf("ResponseFormat = %q, want url", request.ResponseFormat)
+	}
+	if request.BaseURL != "https://assets.test" {
+		t.Fatalf("BaseURL = %q, want configured base url", request.BaseURL)
+	}
+}
+
+func TestBuildChatImageMarkdownContentRendersURLImages(t *testing.T) {
+	content := BuildChatImageMarkdownContent(map[string]any{
+		"data": []map[string]any{
+			{"url": "https://assets.test/images/generated.png"},
+		},
+	})
+
+	if content != "![image_1](https://assets.test/images/generated.png)" {
+		t.Fatalf("content = %q, want markdown image url", content)
+	}
+	if strings.Contains(content, "base64") || strings.Contains(content, "data:") {
+		t.Fatalf("content leaked inline image data: %q", content)
+	}
+}
+
 func TestTextModelDoesNotForceImageChatRoute(t *testing.T) {
 	if IsImageChatRequest(map[string]any{"model": "gpt-5", "messages": []any{map[string]any{"role": "user", "content": "hello"}}}) {
 		t.Fatal("gpt-5 text chat should not be routed as an image request without image modality")

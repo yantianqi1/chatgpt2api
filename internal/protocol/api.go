@@ -206,8 +206,14 @@ func (e *Engine) ImageChatResponse(ctx context.Context, body map[string]any) (ma
 	if err != nil {
 		return nil, nil, err
 	}
-	size := util.Clean(body["size"])
-	outputs, errCh := e.StreamImageOutputsWithPool(ctx, ConversationRequest{Prompt: prompt, Model: model, Messages: messages, N: n, Size: size, Quality: util.Clean(body["quality"]), ResponseFormat: "b64_json", OwnerID: util.Clean(body["owner_id"]), Images: EncodeImages(images), RequirePaidAccount: RequiresPaidImageSize(size)})
+	request := imageChatConversationRequest(body, imageChatConversationOptions{
+		model:    model,
+		prompt:   prompt,
+		n:        n,
+		images:   images,
+		messages: messages,
+	})
+	outputs, errCh := e.StreamImageOutputsWithPool(ctx, request)
 	result, err := e.CollectImageOutputs(outputs, errCh)
 	if err != nil {
 		return nil, nil, err
@@ -226,8 +232,14 @@ func (e *Engine) ImageChatEvents(ctx context.Context, body map[string]any) (<-ch
 			errOut <- err
 			return
 		}
-		size := util.Clean(body["size"])
-		outputs, errCh := e.StreamImageOutputsWithPool(ctx, ConversationRequest{Prompt: prompt, Model: model, Messages: messages, N: n, Size: size, Quality: util.Clean(body["quality"]), ResponseFormat: "b64_json", OwnerID: util.Clean(body["owner_id"]), Images: EncodeImages(images), RequirePaidAccount: RequiresPaidImageSize(size)})
+		request := imageChatConversationRequest(body, imageChatConversationOptions{
+			model:    model,
+			prompt:   prompt,
+			n:        n,
+			images:   images,
+			messages: messages,
+		})
+		outputs, errCh := e.StreamImageOutputsWithPool(ctx, request)
 		id := "chatcmpl-" + util.NewHex(32)
 		created := time.Now().Unix()
 		sentRole := false
@@ -289,6 +301,31 @@ func ChatImageArgs(body map[string]any) (string, string, int, []UploadedImage, [
 	return model, prompt, n, images, messages, nil
 }
 
+type imageChatConversationOptions struct {
+	model    string
+	prompt   string
+	n        int
+	images   []UploadedImage
+	messages []map[string]any
+}
+
+func imageChatConversationRequest(body map[string]any, options imageChatConversationOptions) ConversationRequest {
+	size := util.Clean(body["size"])
+	return ConversationRequest{
+		Prompt:             options.prompt,
+		Model:              options.model,
+		Messages:           options.messages,
+		N:                  options.n,
+		Size:               size,
+		Quality:            util.Clean(body["quality"]),
+		ResponseFormat:     firstNonEmpty(util.Clean(body["response_format"]), "b64_json"),
+		BaseURL:            util.Clean(body["base_url"]),
+		OwnerID:            util.Clean(body["owner_id"]),
+		Images:             EncodeImages(options.images),
+		RequirePaidAccount: RequiresPaidImageSize(size),
+	}
+}
+
 func ImageResultContent(result map[string]any) string {
 	if data := util.AsMapSlice(result["data"]); len(data) > 0 {
 		return BuildChatImageMarkdownContent(result)
@@ -310,6 +347,11 @@ func BuildChatImageMarkdownContent(imageResult map[string]any) string {
 		b64 := util.Clean(item["b64_json"])
 		if b64 != "" {
 			parts = append(parts, fmt.Sprintf("![image_%d](data:image/png;base64,%s)", index+1, b64))
+			continue
+		}
+		imageURL := util.Clean(item["url"])
+		if imageURL != "" {
+			parts = append(parts, fmt.Sprintf("![image_%d](%s)", index+1, imageURL))
 		}
 	}
 	if len(parts) == 0 {

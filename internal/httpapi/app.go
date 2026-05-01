@@ -220,6 +220,8 @@ func (a *App) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body["owner_id"] = identityScope(identity)
+	body["base_url"] = a.resolveImageBaseURL(r)
+	body["response_format"] = a.config.ImageResponseFormat()
 	model := firstNonEmpty(util.Clean(body["model"]), "auto")
 	result, stream, err := a.engine.HandleChatCompletions(r.Context(), body)
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/chat/completions", model, identity, "文本生成", service.ImageVisibilityPrivate)
@@ -1179,6 +1181,8 @@ func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, 
 	start := time.Now()
 	payload["owner_id"] = identityScope(identity)
 	payload["stream"] = false
+	payload["base_url"] = a.config.BaseURL()
+	payload["response_format"] = a.config.ImageResponseFormat()
 	model := firstNonEmpty(util.Clean(payload["model"]), util.ImageModelAuto)
 	result, stream, err := a.engine.HandleChatCompletions(ctx, payload)
 	if stream != nil {
