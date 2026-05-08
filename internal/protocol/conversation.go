@@ -34,7 +34,8 @@ type Engine struct {
 	Proxy    *service.ProxyService
 	Logger   *service.Logger
 
-	ListModelsFunc func(context.Context) (map[string]any, error)
+	TextBackendFunc func(string) *backend.Client
+	ListModelsFunc  func(context.Context) (map[string]any, error)
 
 	responseContextMu sync.Mutex
 	ResponseContexts  *ResponseContextStore
@@ -76,6 +77,16 @@ type ImageOutput struct {
 	Text              string
 	UpstreamEventType string
 	Data              []map[string]any
+}
+
+type textDeltaStream struct {
+	Request ConversationRequest
+	Out     chan<- string
+}
+
+type textDeltaPoolState struct {
+	Attempted int
+	LastError string
 }
 
 type ImageGenerationError struct {
@@ -141,6 +152,9 @@ func (o ImageOutput) Chunk() map[string]any {
 }
 
 func (e *Engine) TextBackend(accessToken string) *backend.Client {
+	if e != nil && e.TextBackendFunc != nil {
+		return e.TextBackendFunc(accessToken)
+	}
 	return backend.NewClient(accessToken, e.Accounts, e.Proxy)
 }
 
@@ -201,6 +215,73 @@ func (e *Engine) StreamTextDeltas(ctx context.Context, client *backend.Client, r
 		errCh <- nil
 	}()
 	return out, errCh
+}
+
+func (e *Engine) StreamTextDeltasWithPool(ctx context.Context, request ConversationRequest) (<-chan string, <-chan error) {
+	out := make(chan string)
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(out)
+		defer close(errCh)
+		attempted := map[string]struct{}{}
+		lastError := ""
+		stream := textDeltaStream{Request: request, Out: out}
+		for {
+			token := e.Accounts.GetTextAccessTokenExcluding(attempted)
+			if token == "" {
+				state := textDeltaPoolState{Attempted: len(attempted), LastError: lastError}
+				errCh <- e.streamAnonymousTextDeltas(ctx, stream, state)
+				return
+			}
+			attempted[token] = struct{}{}
+			emitted, err := e.streamTextDeltasOnce(ctx, token, stream)
+			if err == nil {
+				errCh <- nil
+				return
+			}
+			lastError = err.Error()
+			if e.applyInvalidTextAccountError(token, lastError) && !emitted {
+				lastError = "检测到封号"
+				continue
+			}
+			errCh <- err
+			return
+		}
+	}()
+	return out, errCh
+}
+
+func (e *Engine) streamAnonymousTextDeltas(ctx context.Context, stream textDeltaStream, state textDeltaPoolState) error {
+	if state.Attempted > 0 {
+		if state.LastError != "" {
+			return fmt.Errorf("%s", state.LastError)
+		}
+		return fmt.Errorf("no available text account")
+	}
+	_, err := e.streamTextDeltasOnce(ctx, "", stream)
+	return err
+}
+
+func (e *Engine) streamTextDeltasOnce(ctx context.Context, token string, stream textDeltaStream) (bool, error) {
+	deltas, errCh := e.StreamTextDeltas(ctx, e.TextBackend(token), stream.Request)
+	emitted := false
+	for delta := range deltas {
+		emitted = true
+		select {
+		case stream.Out <- delta:
+		case <-ctx.Done():
+			return emitted, ctx.Err()
+		}
+	}
+	return emitted, <-errCh
+}
+
+func (e *Engine) applyInvalidTextAccountError(token, message string) bool {
+	if !service.IsAccountInvalidErrorMessage(message) {
+		return false
+	}
+	_, handled := e.Accounts.ApplyAccountErrorMessage(token, "text_stream", message)
+	return handled
 }
 
 func (e *Engine) CollectText(ctx context.Context, client *backend.Client, request ConversationRequest) (string, error) {
@@ -912,6 +993,13 @@ func conversationBaseEvent(eventType string, state *ConversationState) Conversat
 func anyList(v any) []any {
 	if list, ok := v.([]any); ok {
 		return list
+	}
+	if list, ok := v.([]map[string]any); ok {
+		out := make([]any, len(list))
+		for i, item := range list {
+			out[i] = item
+		}
+		return out
 	}
 	return nil
 }

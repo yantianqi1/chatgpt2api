@@ -95,7 +95,7 @@ func (e *Engine) HandleChatCompletions(ctx context.Context, body map[string]any)
 			if err != nil {
 				return nil, nil, err
 			}
-			items, errCh = e.StreamTextChatCompletion(ctx, e.TextBackend(e.Accounts.GetTextAccessToken()), messages, model)
+			items, errCh = e.StreamTextChatCompletionWithPool(ctx, messages, model)
 		}
 		return nil, &StreamResult{Items: items, Err: errCh, Kind: "openai"}, nil
 	}
@@ -106,8 +106,9 @@ func (e *Engine) HandleChatCompletions(ctx context.Context, body map[string]any)
 	if err != nil {
 		return nil, nil, err
 	}
-	text, err := e.CollectText(ctx, e.TextBackend(e.Accounts.GetTextAccessToken()), ConversationRequest{Model: model, Messages: messages})
-	if err != nil {
+	items, errCh := e.StreamTextChatCompletionWithPool(ctx, messages, model)
+	text := CollectChatContent(items)
+	if err := <-errCh; err != nil {
 		return nil, nil, err
 	}
 	return CompletionResponse(model, text, 0, messages), nil, nil
@@ -140,31 +141,46 @@ func CompletionResponse(model, content string, created int64, messages []map[str
 }
 
 func (e *Engine) StreamTextChatCompletion(ctx context.Context, client *backend.Client, messages []map[string]any, model string) (<-chan map[string]any, <-chan error) {
+	deltas, errCh := e.StreamTextDeltas(ctx, client, ConversationRequest{Model: model, Messages: messages})
+	return streamTextChatCompletionEvents(ctx, textChatCompletionStream{model: model, deltas: deltas, errCh: errCh})
+}
+
+func (e *Engine) StreamTextChatCompletionWithPool(ctx context.Context, messages []map[string]any, model string) (<-chan map[string]any, <-chan error) {
+	deltas, errCh := e.StreamTextDeltasWithPool(ctx, ConversationRequest{Model: model, Messages: messages})
+	return streamTextChatCompletionEvents(ctx, textChatCompletionStream{model: model, deltas: deltas, errCh: errCh})
+}
+
+type textChatCompletionStream struct {
+	model  string
+	deltas <-chan string
+	errCh  <-chan error
+}
+
+func streamTextChatCompletionEvents(ctx context.Context, stream textChatCompletionStream) (<-chan map[string]any, <-chan error) {
 	out := make(chan map[string]any)
 	errOut := make(chan error, 1)
 	go func() {
 		defer close(out)
 		defer close(errOut)
-		deltas, errCh := e.StreamTextDeltas(ctx, client, ConversationRequest{Model: model, Messages: messages})
 		id := "chatcmpl-" + util.NewHex(32)
 		created := time.Now().Unix()
 		sentRole := false
-		for deltaText := range deltas {
+		for deltaText := range stream.deltas {
 			if !sentRole {
 				sentRole = true
-				out <- CompletionChunk(model, map[string]any{"role": "assistant", "content": deltaText}, nil, id, created)
+				out <- CompletionChunk(stream.model, map[string]any{"role": "assistant", "content": deltaText}, nil, id, created)
 			} else {
-				out <- CompletionChunk(model, map[string]any{"content": deltaText}, nil, id, created)
+				out <- CompletionChunk(stream.model, map[string]any{"content": deltaText}, nil, id, created)
 			}
 		}
-		if err := <-errCh; err != nil {
+		if err := <-stream.errCh; err != nil {
 			errOut <- err
 			return
 		}
 		if !sentRole {
-			out <- CompletionChunk(model, map[string]any{"role": "assistant", "content": ""}, nil, id, created)
+			out <- CompletionChunk(stream.model, map[string]any{"role": "assistant", "content": ""}, nil, id, created)
 		}
-		out <- CompletionChunk(model, map[string]any{}, "stop", id, created)
+		out <- CompletionChunk(stream.model, map[string]any{}, "stop", id, created)
 		errOut <- nil
 	}()
 	return out, errOut
@@ -562,7 +578,7 @@ func (e *Engine) StreamTextResponse(ctx context.Context, body map[string]any) (<
 }
 
 func (e *Engine) StreamTextResponseWithMessages(ctx context.Context, model string, messages []map[string]any) (<-chan map[string]any, <-chan error) {
-	deltas, errCh := e.StreamTextDeltas(ctx, e.TextBackend(e.Accounts.GetTextAccessToken()), ConversationRequest{Model: model, Messages: messages})
+	deltas, errCh := e.StreamTextDeltasWithPool(ctx, ConversationRequest{Model: model, Messages: messages})
 	return streamTextResponseEvents(ctx, model, deltas, errCh)
 }
 
@@ -855,7 +871,7 @@ func (e *Engine) HandleMessages(ctx context.Context, body map[string]any) (map[s
 		items, errCh := e.StreamAnthropicEvents(ctx, request)
 		return nil, &StreamResult{Items: items, Err: errCh, Kind: "anthropic"}, nil
 	}
-	items, errCh := e.StreamTextChatCompletion(ctx, e.TextBackend(e.Accounts.GetTextAccessToken()), request.Messages, request.Model)
+	items, errCh := e.StreamTextChatCompletionWithPool(ctx, request.Messages, request.Model)
 	text := CollectChatContent(items)
 	if err := <-errCh; err != nil {
 		return nil, nil, err
@@ -1030,7 +1046,7 @@ func ContentBlocks(text string, tools any) ([]map[string]any, string) {
 }
 
 func (e *Engine) StreamAnthropicEvents(ctx context.Context, request MessageRequest) (<-chan map[string]any, <-chan error) {
-	chunks, errCh := e.StreamTextChatCompletion(ctx, e.TextBackend(e.Accounts.GetTextAccessToken()), request.Messages, request.Model)
+	chunks, errCh := e.StreamTextChatCompletionWithPool(ctx, request.Messages, request.Model)
 	out := make(chan map[string]any)
 	outErr := make(chan error, 1)
 	go func() {

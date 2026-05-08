@@ -4,15 +4,30 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"chatgpt2api/internal/backend"
+	"chatgpt2api/internal/service"
+	"chatgpt2api/internal/storage"
+	"chatgpt2api/internal/util"
 )
 
 type protocolTestImageConfig struct {
 	baseURL string
 	root    string
 }
+
+type protocolTestAccountConfig struct{}
+
+func (protocolTestAccountConfig) AutoRemoveInvalidAccounts() bool     { return true }
+func (protocolTestAccountConfig) AutoRemoveRateLimitedAccounts() bool { return false }
+func (protocolTestAccountConfig) Proxy() string                       { return "" }
 
 func (c protocolTestImageConfig) ImagesDir() string {
 	return filepath.Join(c.root, "images")
@@ -376,6 +391,107 @@ func TestHandleImageGenerationsValidatesPromptAndCount(t *testing.T) {
 				t.Fatalf("HTTPError = %#v, want status 400 message %q", httpErr, tc.want)
 			}
 		})
+	}
+}
+
+func TestHandleChatCompletionsRetriesAfterInvalidTextAccount(t *testing.T) {
+	var mu sync.Mutex
+	var requirementTokens []string
+	var conversationTokens []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		switch r.URL.Path {
+		case "/":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("<html>ok</html>"))
+		case "/backend-api/sentinel/chat-requirements":
+			mu.Lock()
+			requirementTokens = append(requirementTokens, token)
+			mu.Unlock()
+			if token == "token-invalid" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"detail":"token_invalidated"}`))
+				return
+			}
+			if token == "token-valid" {
+				util.WriteJSON(w, http.StatusOK, map[string]any{"token": "chat-token"})
+				return
+			}
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"detail":"unexpected token"}`))
+		case "/backend-api/conversation":
+			mu.Lock()
+			conversationTokens = append(conversationTokens, token)
+			mu.Unlock()
+			if token != "token-valid" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"detail":"token_invalidated"}`))
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Error("response writer does not support streaming")
+				return
+			}
+			_, _ = fmt.Fprintln(w, `data: {"message":{"author":{"role":"assistant"},"content":{"parts":["模型正常返回"]}},"conversation_id":"conv-1"}`)
+			flusher.Flush()
+			_, _ = fmt.Fprintln(w, "data: [DONE]")
+			flusher.Flush()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	proxy := service.NewProxyService(protocolTestAccountConfig{})
+	accounts := service.NewAccountService(
+		storage.NewJSONBackend(filepath.Join(dir, "accounts.json"), filepath.Join(dir, "auth_keys.json")),
+		protocolTestAccountConfig{},
+		proxy,
+		service.NewLogService(dir),
+	)
+	accounts.AddAccounts([]string{"token-invalid", "token-valid"})
+
+	engine := &Engine{
+		Accounts: accounts,
+		Proxy:    proxy,
+		TextBackendFunc: func(accessToken string) *backend.Client {
+			client := backend.NewClient(accessToken, accounts, proxy)
+			client.BaseURL = server.URL
+			return client
+		},
+	}
+
+	result, _, err := engine.HandleChatCompletions(context.Background(), map[string]any{
+		"model": "gpt-5.5",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "你好"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("HandleChatCompletions() error = %v", err)
+	}
+	choices, ok := result["choices"].([]map[string]any)
+	if !ok || len(choices) != 1 {
+		t.Fatalf("choices = %#v", result["choices"])
+	}
+	message := choices[0]["message"].(map[string]any)
+	if message["content"] != "模型正常返回" {
+		t.Fatalf("message content = %#v, want 模型正常返回", message["content"])
+	}
+	if account := accounts.GetAccount("token-invalid"); account != nil {
+		t.Fatalf("invalid account still present: %#v", account)
+	}
+	if account := accounts.GetAccount("token-valid"); account == nil {
+		t.Fatal("valid account was removed unexpectedly")
+	}
+	if got := requirementTokens; len(got) != 2 || got[0] != "token-invalid" || got[1] != "token-valid" {
+		t.Fatalf("requirement token order = %#v, want [token-invalid token-valid]", got)
+	}
+	if got := conversationTokens; len(got) != 1 || got[0] != "token-valid" {
+		t.Fatalf("conversation token order = %#v, want [token-valid]", got)
 	}
 }
 

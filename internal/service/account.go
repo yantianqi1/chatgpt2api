@@ -278,12 +278,25 @@ func (s *AccountService) GetAccount(accessToken string) map[string]any {
 }
 
 func (s *AccountService) GetTextAccessToken() string {
+	return s.GetTextAccessTokenExcluding(nil)
+}
+
+func (s *AccountService) GetTextAccessTokenExcluding(excluded map[string]struct{}) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, item := range s.items {
+		token := util.Clean(item["access_token"])
+		if token == "" {
+			continue
+		}
+		if excluded != nil {
+			if _, ok := excluded[token]; ok {
+				continue
+			}
+		}
 		status := util.Clean(item["status"])
 		if status != "禁用" && status != "异常" {
-			return util.Clean(item["access_token"])
+			return token
 		}
 	}
 	return ""
