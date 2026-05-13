@@ -45,13 +45,13 @@ var allImages = ImageAccessScope{All: true}
 
 func TestImageServiceListImagesReturnsEmptyArrays(t *testing.T) {
 	service := NewImageService(testImageConfig{root: t.TempDir()})
-	result := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
+	result := service.ListImages("http://127.0.0.1:8000", "", "", 0, allImages)
 
 	data, err := json.Marshal(result)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
-	if string(data) != `{"groups":[],"items":[]}` {
+	if string(data) != `{"groups":[],"items":[],"total":0}` {
 		t.Fatalf("ListImages() JSON = %s", data)
 	}
 }
@@ -68,7 +68,7 @@ func TestImageServiceListImagesDoesNotGenerateThumbnailsSynchronously(t *testing
 	}
 
 	service := NewImageService(config)
-	result := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
+	result := service.ListImages("http://127.0.0.1:8000", "", "", 0, allImages)
 	items := result["items"].([]map[string]any)
 	if len(items) != 1 {
 		t.Fatalf("items = %#v", items)
@@ -199,7 +199,7 @@ func TestImageServiceEnsureThumbnailsCreatesCachedThumbnailFromImageURL(t *testi
 		t.Fatalf("thumbnail metadata was not created: %v", err)
 	}
 
-	result := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
+	result := service.ListImages("http://127.0.0.1:8000", "", "", 0, allImages)
 	items := result["items"].([]map[string]any)
 	if len(items) != 1 {
 		t.Fatalf("items = %#v", items)
@@ -387,12 +387,12 @@ func TestImageServiceScopesImagesByOwner(t *testing.T) {
 	service.RecordImageOwners([]string{"2026/04/29/alice.png"}, "linuxdo:123")
 	service.RecordImageOwners([]string{"http://127.0.0.1:8000/images/2026/04/29/bob.png"}, "linuxdo:456")
 
-	alice := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:123"})
+	alice := service.ListImages("http://127.0.0.1:8000", "", "", 0, ImageAccessScope{OwnerID: "linuxdo:123"})
 	aliceItems := alice["items"].([]map[string]any)
 	if len(aliceItems) != 1 || aliceItems[0]["path"] != "2026/04/29/alice.png" {
 		t.Fatalf("alice ListImages() = %#v", alice)
 	}
-	admin := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
+	admin := service.ListImages("http://127.0.0.1:8000", "", "", 0, allImages)
 	if items := admin["items"].([]map[string]any); len(items) != 3 {
 		t.Fatalf("admin ListImages() = %#v", admin)
 	}
@@ -431,7 +431,7 @@ func TestImageServicePublicVisibility(t *testing.T) {
 	service.RecordGeneratedImages([]string{aliceRel}, "linuxdo:123", "alice", ImageVisibilityPublic)
 	service.RecordGeneratedImages([]string{bobRel}, "linuxdo:456", "bob", ImageVisibilityPrivate)
 
-	public := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{Public: true})
+	public := service.ListImages("http://127.0.0.1:8000", "", "", 0, ImageAccessScope{Public: true})
 	publicItems := public["items"].([]map[string]any)
 	if len(publicItems) != 1 || publicItems[0]["path"] != aliceRel {
 		t.Fatalf("public ListImages() = %#v", public)
@@ -446,7 +446,7 @@ func TestImageServicePublicVisibility(t *testing.T) {
 	if _, err := service.UpdateImageVisibility("http://127.0.0.1:8000/images/"+aliceRel, ImageVisibilityPrivate, ImageAccessScope{OwnerID: "linuxdo:123"}); err != nil {
 		t.Fatalf("UpdateImageVisibility(owner private) error = %v", err)
 	}
-	public = service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{Public: true})
+	public = service.ListImages("http://127.0.0.1:8000", "", "", 0, ImageAccessScope{Public: true})
 	if items := public["items"].([]map[string]any); len(items) != 0 {
 		t.Fatalf("private image should leave public gallery: %#v", public)
 	}

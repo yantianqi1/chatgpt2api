@@ -330,7 +330,7 @@ function ImageManagerContent({
     setLoadError("");
     try {
       const data = await fetchManagedImages(
-        { scope: galleryView, start_date: startDate, end_date: endDate },
+        { scope: galleryView, start_date: startDate, end_date: endDate, limit: IMAGE_MANAGER_BATCH_SIZE },
         { signal: controller.signal },
       );
       updateImageManagerCache(currentCacheKey, data.items);
@@ -364,7 +364,7 @@ function ImageManagerContent({
     setIsAutoRefreshing(true);
     try {
       const data = await fetchManagedImages(
-        { scope: galleryView, start_date: startDate, end_date: endDate },
+        { scope: galleryView, start_date: startDate, end_date: endDate, limit: IMAGE_MANAGER_BATCH_SIZE },
         { signal: controller.signal },
       );
       const incomingByPath = new Map(data.items.map((item) => [item.path, item]));

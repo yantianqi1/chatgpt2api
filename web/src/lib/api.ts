@@ -746,20 +746,22 @@ export async function updateLoginPageImageSettings(
 }
 
 export async function fetchManagedImages(
-  filters: { start_date?: string; end_date?: string; scope?: "mine" | "public" | "all" },
+  filters: { start_date?: string; end_date?: string; scope?: "mine" | "public" | "all"; limit?: number },
   options: { signal?: AbortSignal } = {},
 ) {
   const params = new URLSearchParams();
   if (filters.scope) params.set("scope", filters.scope);
   if (filters.start_date) params.set("start_date", filters.start_date);
   if (filters.end_date) params.set("end_date", filters.end_date);
-  const data = await httpRequest<{ items?: ManagedImage[] | null; groups?: Array<{ date: string; items: ManagedImage[] }> | null }>(
+  if (filters.limit) params.set("limit", String(filters.limit));
+  const data = await httpRequest<{ items?: ManagedImage[] | null; groups?: Array<{ date: string; items: ManagedImage[] }> | null; total?: number }>(
     `/api/images${params.toString() ? `?${params.toString()}` : ""}`,
     { signal: options.signal },
   );
   return {
     items: Array.isArray(data.items) ? data.items : [],
     groups: Array.isArray(data.groups) ? data.groups : [],
+    total: data.total ?? 0,
   };
 }
 

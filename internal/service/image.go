@@ -75,7 +75,7 @@ func NewImageService(config ImageConfig, backend ...storage.Backend) *ImageServi
 	return &ImageService{config: config, store: firstJSONDocumentStore(backend), thumbnailSem: make(chan struct{}, 2)}
 }
 
-func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope ImageAccessScope) map[string]any {
+func (s *ImageService) ListImages(baseURL, startDate, endDate string, limit int, scope ImageAccessScope) map[string]any {
 	s.config.CleanupOldImages()
 	root := s.config.ImagesDir()
 	items := make([]map[string]any, 0)
@@ -150,6 +150,10 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 		}
 		return strings.Compare(left, right) > 0
 	})
+	total := len(items)
+	if limit > 0 && limit < len(items) {
+		items = items[:limit]
+	}
 	groupMap := map[string][]map[string]any{}
 	var order []string
 	for _, item := range items {
@@ -163,7 +167,7 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 	for _, day := range order {
 		groups = append(groups, map[string]any{"date": day, "items": groupMap[day]})
 	}
-	return map[string]any{"items": items, "groups": groups}
+	return map[string]any{"items": items, "groups": groups, "total": total}
 }
 
 func (s *ImageService) UpdateImageVisibility(value, visibility string, scope ImageAccessScope) (map[string]any, error) {
