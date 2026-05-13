@@ -57,6 +57,7 @@ type ImageService struct {
 	store         storage.JSONDocumentBackend
 	thumbnailMu   sync.Mutex
 	thumbnailJobs map[string]*thumbnailJob
+	thumbnailSem  chan struct{}
 }
 
 type imageFileRef struct {
@@ -71,7 +72,7 @@ type thumbnailJob struct {
 }
 
 func NewImageService(config ImageConfig, backend ...storage.Backend) *ImageService {
-	return &ImageService{config: config, store: firstJSONDocumentStore(backend)}
+	return &ImageService{config: config, store: firstJSONDocumentStore(backend), thumbnailSem: make(chan struct{}, 2)}
 }
 
 func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope ImageAccessScope) map[string]any {
@@ -392,6 +393,9 @@ func (s *ImageService) thumbnailCacheInfo(rel string, sourceModTime time.Time) (
 }
 
 func (s *ImageService) generateThumbnail(ref imageFileRef) map[string]any {
+	s.thumbnailSem <- struct{}{}
+	defer func() { <-s.thumbnailSem }()
+
 	thumbPath, result, _ := s.thumbnailCacheInfo(ref.rel, ref.info.ModTime())
 	file, err := os.Open(ref.path)
 	if err != nil {
@@ -404,7 +408,8 @@ func (s *ImageService) generateThumbnail(ref imageFileRef) map[string]any {
 	}
 	bounds := img.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
-	thumb := resizeToFit(flattenImage(img), ThumbnailSize, ThumbnailSize)
+	thumb := resizeToFitFlattened(img, ThumbnailSize, ThumbnailSize)
+	img = nil
 	if err := writeJPEGThumbnail(thumbPath, thumb); err != nil {
 		return map[string]any{}
 	}
@@ -905,6 +910,72 @@ func resizeToFit(src image.Image, maxW, maxH int) image.Image {
 				dx,
 				dy,
 			))
+		}
+	}
+	return dst
+}
+
+func resizeToFitFlattened(src image.Image, maxW, maxH int) image.Image {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w <= 0 || h <= 0 {
+		return image.NewRGBA(image.Rect(0, 0, 1, 1))
+	}
+	scale := float64(maxW) / float64(w)
+	if sh := float64(maxH) / float64(h); sh < scale {
+		scale = sh
+	}
+	if scale > 1 {
+		scale = 1
+	}
+	nw, nh := int(float64(w)*scale), int(float64(h)*scale)
+	if nw < 1 {
+		nw = 1
+	}
+	if nh < 1 {
+		nh = 1
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, nw, nh))
+	for y := 0; y < nh; y++ {
+		fy := (float64(y)+0.5)*float64(h)/float64(nh) - 0.5
+		y0 := int(fy)
+		dy := fy - float64(y0)
+		if y0 < 0 {
+			y0 = 0
+			dy = 0
+		}
+		y1 := y0 + 1
+		if y1 >= h {
+			y1 = h - 1
+		}
+		for x := 0; x < nw; x++ {
+			fx := (float64(x)+0.5)*float64(w)/float64(nw) - 0.5
+			x0 := int(fx)
+			dx := fx - float64(x0)
+			if x0 < 0 {
+				x0 = 0
+				dx = 0
+			}
+			x1 := x0 + 1
+			if x1 >= w {
+				x1 = w - 1
+			}
+			c := bilinearColor(
+				src.At(b.Min.X+x0, b.Min.Y+y0),
+				src.At(b.Min.X+x1, b.Min.Y+y0),
+				src.At(b.Min.X+x0, b.Min.Y+y1),
+				src.At(b.Min.X+x1, b.Min.Y+y1),
+				dx,
+				dy,
+			)
+			if c.A < 255 {
+				fa := float64(c.A) / 255.0
+				c.R = uint8(float64(c.R)*fa + 255*(1-fa))
+				c.G = uint8(float64(c.G)*fa + 255*(1-fa))
+				c.B = uint8(float64(c.B)*fa + 255*(1-fa))
+				c.A = 255
+			}
+			dst.Set(x, y, c)
 		}
 	}
 	return dst
