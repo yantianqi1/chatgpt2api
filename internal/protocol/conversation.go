@@ -762,7 +762,13 @@ func BuildImagePrompt(prompt, size, quality string) string {
 	}
 	if size != "" {
 		if width, height, ok := imageSizeDimensions(size); ok {
-			hintsList = append(hintsList, fmt.Sprintf("输出图片目标分辨率为 %d x %d 像素，并严格按该尺寸对应的宽高比构图。", width, height))
+			orientation := "正方形"
+			if width > height {
+				orientation = "横版（宽大于高）"
+			} else if height > width {
+				orientation = "竖版（高大于宽）"
+			}
+			hintsList = append(hintsList, fmt.Sprintf("输出图片目标分辨率为 %d x %d 像素（宽 %d，高 %d），%s构图，严格按该宽高比输出。", width, height, width, height, orientation))
 		} else if hint, ok := hints[size]; ok {
 			hintsList = append(hintsList, hint)
 		} else {
