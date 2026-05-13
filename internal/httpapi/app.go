@@ -647,7 +647,7 @@ func (a *App) handleImages(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, status, message)
 			return
 		}
-		limit := 20
+		limit := a.config.ImageListLimit()
 		if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
 			limit = v
 		}

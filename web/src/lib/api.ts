@@ -134,6 +134,7 @@ export type SettingsConfig = {
   registration_enabled?: boolean;
   refresh_account_interval_minute?: number | string;
   image_concurrent_limit?: number | string;
+  image_list_limit?: number | string;
   user_default_concurrent_limit?: number | string;
   user_default_rpm_limit?: number | string;
   image_retention_days?: number | string;

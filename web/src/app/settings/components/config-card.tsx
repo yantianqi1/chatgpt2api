@@ -125,6 +125,9 @@ export function ConfigCard() {
   const setImageRetentionDays = useSettingsStore(
     (state) => state.setImageRetentionDays,
   );
+  const setImageListLimit = useSettingsStore(
+    (state) => state.setImageListLimit,
+  );
   const setAutoRemoveInvalidAccounts = useSettingsStore(
     (state) => state.setAutoRemoveInvalidAccounts,
   );
@@ -277,6 +280,18 @@ export function ConfigCard() {
                 value={String(config?.image_retention_days || "")}
                 onChange={(event) => setImageRetentionDays(event.target.value)}
                 placeholder="30"
+                className={settingsInputClassName}
+              />
+            </Field>
+            <Field className={configFieldClassName}>
+              <ConfigFieldLabel htmlFor="settings-image-list-limit">
+                图库显示数量
+              </ConfigFieldLabel>
+              <Input
+                id="settings-image-list-limit"
+                value={String(config?.image_list_limit || "")}
+                onChange={(event) => setImageListLimit(event.target.value)}
+                placeholder="0（不限制）"
                 className={settingsInputClassName}
               />
             </Field>

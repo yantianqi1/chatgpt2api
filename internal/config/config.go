@@ -26,6 +26,7 @@ var settingEnvKeys = map[string]string{
 	"user_default_rpm_limit":            "CHATGPT2API_USER_DEFAULT_RPM_LIMIT",
 	"image_retention_days":              "CHATGPT2API_IMAGE_RETENTION_DAYS",
 	"image_response_format":             "CHATGPT2API_IMAGE_RESPONSE_FORMAT",
+	"image_list_limit":                  "CHATGPT2API_IMAGE_LIST_LIMIT",
 	"auto_remove_invalid_accounts":      "CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS",
 	"auto_remove_rate_limited_accounts": "CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS",
 	"log_retention_days":                "CHATGPT2API_LOG_RETENTION_DAYS",
@@ -183,6 +184,10 @@ func (s *Store) ImageRetentionDays() int {
 		return 1
 	}
 	return value
+}
+
+func (s *Store) ImageListLimit() int {
+	return intSetting(s.settingValue("image_list_limit", 0), 0)
 }
 
 func (s *Store) LogRetentionDays() int {
@@ -381,6 +386,7 @@ func (s *Store) Get() map[string]any {
 	s.mu.RUnlock()
 	data["refresh_account_interval_minute"] = s.RefreshAccountIntervalMinute()
 	data["image_concurrent_limit"] = s.ImageConcurrentLimit()
+	data["image_list_limit"] = s.ImageListLimit()
 	data["user_default_concurrent_limit"] = s.UserDefaultConcurrentLimit()
 	data["user_default_rpm_limit"] = s.UserDefaultRPMLimit()
 	data["image_retention_days"] = s.ImageRetentionDays()
